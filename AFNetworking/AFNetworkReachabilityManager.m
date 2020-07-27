@@ -79,8 +79,9 @@ static AFNetworkReachabilityStatus AFNetworkReachabilityStatusForFlags(SCNetwork
  * a queued notification (for an earlier status condition) is processed after
  * the later update, resulting in the listener being left in the wrong state.
  */
-static void AFPostReachabilityStatusChange(SCNetworkReachabilityFlags flags, AFNetworkReachabilityStatusCallback block) {
+static void AFPostReachabilityStatusChange(SCNetworkReachabilityRef target, SCNetworkReachabilityFlags flags, AFNetworkReachabilityStatusCallback block) {
     AFNetworkReachabilityStatus status = AFNetworkReachabilityStatusForFlags(flags);
+    SCNetworkReachabilityRef networkReachability = CFRetain(target);
     dispatch_async(dispatch_get_main_queue(), ^{
         AFNetworkReachabilityManager *manager = nil;
         if (block) {
@@ -88,14 +89,14 @@ static void AFPostReachabilityStatusChange(SCNetworkReachabilityFlags flags, AFN
         }
         NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
         NSDictionary *userInfo = @{ AFNetworkingReachabilityNotificationStatusItem: @(status) };
-        [notificationCenter postNotificationName:AFNetworkingReachabilityDidChangeNotification object:manager userInfo:userInfo];
+        [notificationCenter postNotificationName:AFNetworkingReachabilityDidChangeNotification object:(__bridge id _Nullable)networkReachability userInfo:userInfo];
+        CFRelease(networkReachability);
     });
 }
 
 static void AFNetworkReachabilityCallback(SCNetworkReachabilityRef __unused target, SCNetworkReachabilityFlags flags, void *info) {
-    AFPostReachabilityStatusChange(flags, (__bridge AFNetworkReachabilityStatusCallback)info);
+    AFPostReachabilityStatusChange(target, flags, (__bridge AFNetworkReachabilityStatusCallback)info);
 }
-
 
 static const void * AFNetworkReachabilityRetainCallback(const void *info) {
     return Block_copy(info);
@@ -108,7 +109,6 @@ static void AFNetworkReachabilityReleaseCallback(const void *info) {
 }
 
 @interface AFNetworkReachabilityManager ()
-@property (readonly, nonatomic, assign) SCNetworkReachabilityRef networkReachability;
 @property (readwrite, nonatomic, assign) AFNetworkReachabilityStatus networkReachabilityStatus;
 @property (readwrite, nonatomic, copy) AFNetworkReachabilityStatusBlock networkReachabilityStatusBlock;
 @end
@@ -230,7 +230,7 @@ static void AFNetworkReachabilityReleaseCallback(const void *info) {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0),^{
         SCNetworkReachabilityFlags flags;
         if (SCNetworkReachabilityGetFlags(self.networkReachability, &flags)) {
-            AFPostReachabilityStatusChange(flags, callback);
+            AFPostReachabilityStatusChange(self.networkReachability, flags, callback);
         }
     });
 }
